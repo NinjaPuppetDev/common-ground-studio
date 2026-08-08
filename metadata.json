@@ -1,0 +1,6 @@
+{
+  "name": "Common Ground",
+  "description": "Evidence-Based Claim Assessment and Market Position Analysis applet",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
