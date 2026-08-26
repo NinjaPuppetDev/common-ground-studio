@@ -2,60 +2,65 @@ import { useState, useCallback } from 'react';
 import type { AnalysisReport, AnalysisInput, ProgressEvent } from './types';
 import LandingScreen from './components/LandingScreen';
 import InvestigationView from './components/InvestigationView';
+import AuthModal from './components/AuthModal';
+import { AuthProvider, useAuth } from './context/AuthContext';
 
-export default function App() {
+function MainApp() {
   const [screen, setScreen] = useState<'landing' | 'investigating'>('landing');
   const [progress, setProgress] = useState<ProgressEvent[]>([]);
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const {
+    session,
+    canSearch,
+    openAuthModal,
+    recordSearchPerformed,
+  } = useAuth();
+
   const handleAnalyze = useCallback(async (input: AnalysisInput) => {
+    // 1. Check guest limit
+    if (!canSearch) {
+      openAuthModal(
+        'login',
+        "You've used your 1 free guest analysis. Please sign in with Google or create an account to continue."
+      );
+      return;
+    }
+
     setScreen('investigating');
     setProgress([]);
     setReport(null);
     setError(null);
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
 
-      let response: Response | null = null;
-
-      // If an external Supabase function URL is explicitly configured, try it with fallback
-      if (supabaseUrl) {
-        try {
-          const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-          };
-          if (anonKey) {
-            headers['Authorization'] = `Bearer ${anonKey}`;
-          }
-          const externalRes = await fetch(`${supabaseUrl}/functions/v1/analyze`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(input),
-          });
-          if (externalRes.ok) {
-            response = externalRes;
-          }
-        } catch (fetchErr) {
-          console.warn('External analyze endpoint unreachable, falling back to /api/analyze:', fetchErr);
-        }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
       }
 
-      // If no external response or external failed, call the container's built-in /api/analyze
-      if (!response) {
-        response = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(input),
-        });
-      }
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(input),
+      });
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => null);
+        if (response.status === 429) {
+          if (errBody?.requiresAuth) {
+            openAuthModal('login', errBody.message || 'Free guest limit reached. Please sign in to continue.');
+          }
+          throw new Error(errBody?.message || 'Rate limit reached. Please try again later.');
+        }
         throw new Error(errBody?.message || errBody?.error || `Server returned error (${response.status})`);
       }
+
+      // Record that search was executed
+      recordSearchPerformed();
 
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response stream');
@@ -97,7 +102,7 @@ export default function App() {
             } else if (eventType === 'error') {
               throw new Error(data.message || 'Analysis failed');
             } else if (eventType === 'progress') {
-              setProgress(prev => [...prev, data as ProgressEvent]);
+              setProgress((prev) => [...prev, data as ProgressEvent]);
             }
           } catch (parseErr) {
             if (parseErr instanceof Error) throw parseErr;
@@ -118,7 +123,7 @@ export default function App() {
       setError(message);
       setScreen('landing');
     }
-  }, []);
+  }, [canSearch, openAuthModal, session, recordSearchPerformed]);
 
   const handleReset = useCallback(() => {
     setScreen('landing');
@@ -127,24 +132,34 @@ export default function App() {
     setProgress([]);
   }, []);
 
-  if (screen === 'investigating') {
-    return (
-      <InvestigationView
-        progressEvents={progress}
-        report={report}
-        onReset={handleReset}
-      />
-    );
-  }
-
   return (
     <>
-      <LandingScreen onAnalyze={handleAnalyze} isAnalyzing={false} />
+      {screen === 'investigating' ? (
+        <InvestigationView
+          progressEvents={progress}
+          report={report}
+          onReset={handleReset}
+        />
+      ) : (
+        <LandingScreen onAnalyze={handleAnalyze} isAnalyzing={false} />
+      )}
+
       {error && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-evidence-low/15 border border-evidence-low/25 text-evidence-low text-sm rounded-xl px-5 py-3 shadow-card backdrop-blur-sm max-w-md text-center">
-          We couldn't complete that investigation — {error}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-rose-500/90 border border-rose-400 text-white text-sm rounded-xl px-5 py-3 shadow-2xl backdrop-blur-md max-w-md text-center z-50 animate-fade-in font-sans">
+          {error}
         </div>
       )}
+
+      <AuthModal />
     </>
   );
 }
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <MainApp />
+    </AuthProvider>
+  );
+}
+

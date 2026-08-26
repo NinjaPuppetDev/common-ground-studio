@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/nativelyai.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Common Ground — Evidence-Based Claim Assessment</title>
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('common-ground-theme');
+          if (saved === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+            if (!saved) {
+              localStorage.setItem('common-ground-theme', 'light');
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

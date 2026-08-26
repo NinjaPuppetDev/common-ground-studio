@@ -9,6 +9,8 @@ import {
 import type { ProgressEvent, AnalysisReport, HypothesisState, Layer2AnalysisResult, CommonGroundSynthesis, AdaptiveEvidenceAssessment } from '../types';
 import { generatePDFReport, downloadPDFBlob, buildPDFFilename } from '../lib/generatePDF';
 import ThemeToggle from './ThemeToggle';
+import AuthHeaderButton from './AuthHeaderButton';
+import { useAuth } from '../context/AuthContext';
 
 /* ── Props ──────────────────────────────────────────── */
 
@@ -577,6 +579,7 @@ function AdaptiveEvidenceAssessmentCard({ assessment }: { assessment?: AdaptiveE
 
 function FounderLensSection({ report }: { report: AnalysisReport }) {
   const lens = getDerivedFounderLens(report);
+  const { session } = useAuth();
 
   const [layer2Loading, setLayer2Loading] = useState(false);
   const [layer2Progress, setLayer2Progress] = useState<ProgressEvent[]>([]);
@@ -646,9 +649,13 @@ function FounderLensSection({ report }: { report: AnalysisReport }) {
       }
 
       if (!response) {
+        const localHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (session?.access_token) {
+          localHeaders['Authorization'] = `Bearer ${session.access_token}`;
+        }
         response = await fetch('/api/analyze', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: localHeaders,
           body: JSON.stringify(bodyData),
         });
       }
@@ -751,9 +758,13 @@ function FounderLensSection({ report }: { report: AnalysisReport }) {
       }
 
       if (!response) {
+        const localHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (session?.access_token) {
+          localHeaders['Authorization'] = `Bearer ${session.access_token}`;
+        }
         response = await fetch('/api/analyze', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: localHeaders,
           body: JSON.stringify(bodyData),
         });
       }
@@ -2118,6 +2129,7 @@ export default function InvestigationView({ progressEvents, report, onReset }: I
             <p className="text-xs font-mono text-foreground/30 uppercase tracking-[0.15em]">Common Ground</p>
           </div>
           <div className="flex items-center gap-2">
+            <AuthHeaderButton />
             <ThemeToggle />
             {report && (
               <button

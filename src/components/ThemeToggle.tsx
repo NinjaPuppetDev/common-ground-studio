@@ -9,7 +9,7 @@ export function useTheme() {
         return saved;
       }
     }
-    return 'light'; // Default to white mode
+    return 'light'; // Default to light mode
   });
 
   useEffect(() => {
@@ -24,10 +24,23 @@ export function useTheme() {
     } catch {
       // Ignore local storage error
     }
+
+    const handleThemeChange = (e: CustomEvent<string>) => {
+      if (e.detail === 'dark' || e.detail === 'light') {
+        setTheme(e.detail);
+      }
+    };
+
+    window.addEventListener('theme-changed' as any, handleThemeChange);
+    return () => {
+      window.removeEventListener('theme-changed' as any, handleThemeChange);
+    };
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    window.dispatchEvent(new CustomEvent('theme-changed', { detail: next }));
   };
 
   return { theme, toggleTheme, setTheme };
