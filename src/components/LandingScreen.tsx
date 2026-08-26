@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { Check, ArrowRight, Globe, Loader2 } from 'lucide-react';
 import AnimatedNetwork from './AnimatedNetwork';
+import ThemeToggle from './ThemeToggle';
 
 interface LandingScreenProps {
   onAnalyze: (input: { url: string }) => void;
@@ -258,10 +259,11 @@ export default function LandingScreen({ onAnalyze, isAnalyzing }: LandingScreenP
             Common Ground
           </span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-[11px] text-foreground/30 hidden sm:block">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-foreground/40 hidden sm:block font-mono">
             AI Strategy Platform
           </span>
+          <ThemeToggle showLabel />
         </div>
       </motion.div>
 
@@ -310,7 +312,7 @@ export default function LandingScreen({ onAnalyze, isAnalyzing }: LandingScreenP
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Globe className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors duration-300 ${
-                  inputFocused ? 'text-primary/60' : 'text-foreground/20'
+                  inputFocused ? 'text-primary' : 'text-foreground/30'
                 }`} />
                 <input
                   type="url"
@@ -320,9 +322,9 @@ export default function LandingScreen({ onAnalyze, isAnalyzing }: LandingScreenP
                   onBlur={() => setInputFocused(false)}
                   placeholder="https://yourcompany.com"
                   disabled={isAnalyzing}
-                  className="w-full bg-card/50 border border-border/60 rounded-xl pl-11 pr-4 py-3.5 text-foreground text-sm
-                    placeholder:text-foreground/20 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20
-                    transition-all disabled:opacity-40"
+                  className="w-full bg-card border border-border rounded-xl pl-11 pr-4 py-3.5 text-foreground text-sm
+                    placeholder:text-foreground/35 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20
+                    transition-all disabled:opacity-40 shadow-sm"
                 />
               </div>
               <button

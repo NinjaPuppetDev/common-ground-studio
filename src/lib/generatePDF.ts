@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import type { AnalysisReport, PositioningSignal, MarketSpace, PositioningClarityItem, PositioningRecommendation } from '../types';
+import type { AnalysisReport } from '../types';
 
 const PAGE_W = 210; // A4 width in mm
 const PAGE_H = 297; // A4 height in mm
@@ -12,7 +12,7 @@ const CONTENT_W = PAGE_W - MARGIN * 2;
  */
 export async function generatePDFReport(
   report: AnalysisReport,
-  _containerEl: HTMLElement | null,
+  _containerEl: HTMLElement | null = null,
 ): Promise<Blob | null> {
   const pdf = new jsPDF('p', 'mm', 'a4');
   let y = MARGIN;
@@ -20,157 +20,376 @@ export async function generatePDFReport(
   // ── Cover page ──────────────────────────────────────
   addCoverPage(pdf, report);
 
-  // ── Layer 1: Initial Hypothesis ─────────────────────
+  // ── Layer 1: What The Company Says ──────────────────
+  pdf.addPage();
+  pdf.setFillColor(9, 9, 9);
+  pdf.rect(0, 0, PAGE_W, PAGE_H, 'F');
   y = MARGIN;
-  addSectionHeader(pdf, y, 'Layer 2', 'Initial hypothesis');
+
+  addSectionHeader(pdf, y, 'LAYER 1', 'What The Company Says');
   y += 14;
-  y = addBodyText(pdf, y, 'Based on the evidence so far…');
-  y += 2;
+  y = addBodyText(pdf, y, 'Explicit Communication derived directly from primary page copy.');
+  y += 4;
 
-  const posDesc = report.intendedPosition?.description || 'Insufficient data to determine intended position';
-  const posRationale = report.intendedPosition?.rationale;
-  y = drawWrappedText(pdf, posDesc, y, 13, 'bold', 100, 140, 255);
-  if (posRationale) {
-    y = drawWrappedText(pdf, posRationale, y, 9, 'italic', 120, 120, 130);
-  }
+  const lens = report.founderLens;
+  const layer1 = lens?.layer1WhatTheySay || {
+    whatItOffers: report.intendedPosition?.description || report.title || "Not stated",
+    whoItServes: "Target audience specified in primary copy.",
+    problemsAddressed: "Core customer pain points addressed on landing page.",
+    offeringsAndProducts: "Primary products and service packages offered.",
+    claimsAndDifferentiators: "Explicit marketing claims and differentiators.",
+    keyTerminology: "Key industry and proprietary terminology used.",
+    explicitCopySummary: report.title || "Primary page copy summary.",
+  };
 
-  // ── Layer 2: Supporting Evidence ────────────────────
-  y += 6;
-  y = checkPageBreak(pdf, y, 8);
-  addSectionHeader(pdf, y, 'Layer 3', 'Supporting evidence');
-  y += 14;
-  y = addBodyText(pdf, y, 'How this hypothesis was constructed. Each observation contributed to the current understanding.');
-  y += 2;
+  y = checkPageBreak(pdf, y, 22);
+  y = drawSimpleCard(pdf, y, '1. WHAT IT OFFERS', layer1.whatItOffers);
+  y += 3;
+  y = checkPageBreak(pdf, y, 22);
+  y = drawSimpleCard(pdf, y, '2. WHO IT SERVES', layer1.whoItServes);
+  y += 3;
+  y = checkPageBreak(pdf, y, 22);
+  y = drawSimpleCard(pdf, y, '3. PROBLEMS ADDRESSED', layer1.problemsAddressed);
+  y += 3;
+  y = checkPageBreak(pdf, y, 22);
+  y = drawSimpleCard(pdf, y, '4. OFFERINGS & PRODUCTS', layer1.offeringsAndProducts);
+  y += 3;
+  y = checkPageBreak(pdf, y, 22);
+  y = drawSimpleCard(pdf, y, '5. CLAIMS & DIFFERENTIATORS', layer1.claimsAndDifferentiators);
+  y += 3;
+  y = checkPageBreak(pdf, y, 22);
+  y = drawSimpleCard(pdf, y, '6. KEY TERMINOLOGY', layer1.keyTerminology);
+  y += 3;
+  y = checkPageBreak(pdf, y, 22);
+  y = drawSimpleCard(pdf, y, 'EXPLICIT COPY SUMMARY', layer1.explicitCopySummary);
 
-  const signals = (report.positioningSignals || []).slice(0, 6);
-  for (const signal of signals) {
-    y = checkPageBreak(pdf, y, 30);
-    const firstEv = signal.evidence?.[0];
-    y = drawEvidenceCard(pdf, y, signal, firstEv);
-  }
-  if (signals.length === 0) {
-    y = addBodyText(pdf, y, 'No evidence artifacts to display.');
-  }
-
-  // ── Layer 3: Hypothesis Evolution ───────────────────
-  y += 6;
-  y = checkPageBreak(pdf, y, 8);
-  addSectionHeader(pdf, y, 'Layer 4', 'Hypothesis evolution');
-  y += 14;
-  y = addBodyText(pdf, y, 'How understanding evolved as each page was analyzed.');
-  y += 2;
-
-  const versions: { label: string; desc: string; note: string }[] = [];
-  if (report.intendedPosition) versions.push({ label: 'Version 1', desc: report.intendedPosition.description, note: 'Based on what the company communicates directly' });
-  if (report.inferredPosition) versions.push({ label: 'Version 2 (Adjusted)', desc: report.inferredPosition.description, note: 'After examining evidence across pages' });
-
-  for (const v of versions) {
-    y = checkPageBreak(pdf, y, 25);
-    y = drawVersionCard(pdf, y, v.label, v.note, v.desc);
-  }
-
-  if (report.earnedPosition) {
-    y += 4;
-    y = checkPageBreak(pdf, y, 20);
-    y = drawSimpleCard(pdf, y, 'Final Assessment', report.earnedPosition.explanation);
-  }
-
-  // ── Layer 4: Contradictions ─────────────────────────
-  const gaps = report.positioningGaps || [];
-  const journey = report.visitorJourney || [];
-  const weakJourneyStages = journey.filter((j: { effect: string }) => j.effect === 'weakens_position');
-  const contradictions = [
-    ...gaps,
-    ...weakJourneyStages.map((j: { stage: string; explanation: string }) => ({
-      area: j.stage, description: j.explanation, impact: 'moderate' as const, gapType: 'messaging_inconsistency' as const,
-    })),
-  ];
-
-  if (contradictions.length > 0) {
-    y += 6;
-    y = checkPageBreak(pdf, y, 8);
-    addSectionHeader(pdf, y, 'Layer 5', 'Contradictions');
+  // ── Layer 2: What The Website Reveals ───────────────
+  const layer2 = report.layer2Analysis;
+  if (layer2) {
+    y += 8;
+    y = checkPageBreak(pdf, y, 16);
+    addSectionHeader(pdf, y, 'LAYER 2', 'What The Website Reveals');
     y += 14;
-    y = addBodyText(pdf, y, 'Evidence that weakens or complicates the market position.');
-    y += 2;
+    y = addBodyText(pdf, y, '"What does the website architecture reveal through relationships between pages?"');
+    y += 4;
 
-    for (const c of contradictions) {
+    if (layer2.sourceCoverage) {
+      const cov = layer2.sourceCoverage;
+      const covText = `Discovered Pages: ${cov.discoveredPagesCount}  |  Analyzed Pages: ${cov.analyzedPagesCount}  |  Unexamined Pages: ${cov.unexaminedPagesCount}\n${cov.coverageNote}`;
+      y = checkPageBreak(pdf, y, 20);
+      y = drawSimpleCard(pdf, y, 'SOURCE COVERAGE & AUDIT BREADTH', covText);
+      y += 3;
+    }
+
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '1. NAVIGATION & INFORMATION ARCHITECTURE', layer2.navigationAndIa);
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '2. PAGE RELATIONSHIPS', layer2.pageRelationships);
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '3. PRODUCT / SERVICE STRUCTURE', layer2.productServiceStructure || (layer2 as any).productsAndServices || '');
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '4. COMMERCIAL STRUCTURE', layer2.commercialStructure);
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '5. PROOF & TRUST', layer2.proofAndTrust);
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '6. CONVERSION PATHS', layer2.conversionPaths);
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '7. EXPECTED VISITOR SEQUENCE', layer2.expectedVisitorSequence || (layer2 as any).visitorJourney || '');
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '8. STRUCTURAL PRIORITIES', layer2.structuralPriorities);
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '9. CONTRADICTIONS', layer2.contradictions);
+    y += 3;
+    y = checkPageBreak(pdf, y, 22);
+    y = drawSimpleCard(pdf, y, '10. NON-OBVIOUS RELATIONSHIPS', layer2.nonObviousRelationships);
+
+    // Cross-Page Architectural Evidence
+    const evidenceList = layer2.crossPageEvidence || (layer2 as any).supportingEvidence || [];
+    if (evidenceList.length > 0) {
+      y += 6;
+      y = checkPageBreak(pdf, y, 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.setTextColor(200, 200, 220);
+      pdf.text('CROSS-PAGE ARCHITECTURAL EVIDENCE', MARGIN, y);
+      y += 6;
+
+      for (const ev of evidenceList.slice(0, 8)) {
+        y = checkPageBreak(pdf, y, 20);
+        const status = ev.status || 'OBSERVED';
+        const sources = Array.isArray(ev.sourcePages) ? ev.sourcePages.join(' → ') : (ev.sourcePages || (ev as any).source || '');
+        const title = `[${status}] ${sources}`;
+        const text = `${ev.relationshipObserved || (ev as any).relationship || ''}${ev.interpretation ? `\nInterpretation: ${ev.interpretation}` : ''}`;
+        y = drawSimpleCard(pdf, y, title, text);
+        y += 2;
+      }
+    }
+
+    // What Remains Unknown
+    if (layer2.whatRemainsUnknown) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 22);
+      y = drawSimpleCard(pdf, y, 'WHAT REMAINS UNKNOWN', layer2.whatRemainsUnknown);
+    }
+
+    // Architectural Synthesis
+    if (layer2.architecturalSynthesis) {
+      y += 6;
       y = checkPageBreak(pdf, y, 25);
-      y = drawContradictionCard(pdf, y, c.area, c.description, c.impact);
+      y = drawSimpleCard(pdf, y, 'ARCHITECTURAL SYNTHESIS (REVEALED BEYOND COPY)', layer2.architecturalSynthesis);
     }
   }
 
-  // ── Layer 5: Stabilization ──────────────────────────
-  y += 6;
-  y = checkPageBreak(pdf, y, 8);
-  addSectionHeader(pdf, y, 'Layer 6', 'Stabilization');
-  y += 14;
-  y = addBodyText(pdf, y, 'No additional evidence would meaningfully change the inferred market position.');
-  y += 2;
-
-  const meta = report.analysisMetadata;
-  const confidence = meta?.finalConfidence ?? 0;
-  const pct = Math.round(confidence * 100);
-  const analyzed = meta?.pagesAnalyzed ?? 0;
-  const discovered = meta?.pagesDiscovered ?? 0;
-  const stopReason = meta?.stopReason ?? 'Completed';
-  const progression = meta?.confidenceProgression ?? [];
-
-  y = checkPageBreak(pdf, y, 35);
-  y = drawStabilitySection(pdf, y, pct, discovered, analyzed, stopReason, progression);
-
-  // ── Layer 6: Final Synthesis ────────────────────────
-  y += 6;
-  y = checkPageBreak(pdf, y, 8);
-  addSectionHeader(pdf, y, 'Layer 7', 'Final synthesis');
-  y += 14;
-  y = addBodyText(pdf, y, 'The complete market position, consolidated.');
-  y += 2;
-
-  if (report.positionSummary) {
+  // ── Stage 3: Common Ground Synthesis ─────────────────
+  const cg = report.commonGroundSynthesis || layer2?.commonGroundSynthesis;
+  if (cg) {
+    y += 8;
     y = checkPageBreak(pdf, y, 20);
-    y = drawSimpleCard(pdf, y, 'Summary', `"${report.positionSummary}"`);
-  }
-
-  if (report.marketSpace) {
-    y += 4;
-    y = checkPageBreak(pdf, y, 30);
-    y = drawMarketSpace(pdf, y, report.marketSpace);
-  }
-
-  if (report.positioningClarity) {
-    y += 4;
-    y = checkPageBreak(pdf, y, 30);
-    y = drawClaritySection(pdf, y, report.positioningClarity.items || []);
-  }
-
-  const recs = report.positioningRecommendations || [];
-  if (recs.length > 0) {
-    y += 4;
-    y = checkPageBreak(pdf, y, 30);
-    y = drawRecommendations(pdf, y, recs.slice(0, 4));
-  }
-
-  // ── Layer 7: Reflection ─────────────────────────────
-  if (report.finalQuestion) {
-    y += 6;
-    y = checkPageBreak(pdf, y, 8);
-    addSectionHeader(pdf, y, 'Layer 8', 'Reflection');
+    addSectionHeader(pdf, y, 'STAGE 3', 'Common Ground Comparative Analysis');
     y += 14;
-    y = checkPageBreak(pdf, y, 25);
-    y = drawReflectionCard(pdf, y, report.finalQuestion);
+
+    // 1. Common Ground Finding
+    if (cg.commonGroundFinding || cg.systemThesis) {
+      y = checkPageBreak(pdf, y, 22);
+      const findingStr = typeof cg.commonGroundFinding === 'string'
+        ? cg.commonGroundFinding
+        : (cg.commonGroundFinding?.thesis || cg.systemThesis || '');
+      y = drawSimpleCard(pdf, y, '1. COMMON GROUND CORE FINDING', findingStr);
+      y += 3;
+    }
+
+    // 2. Where They Agree
+    if (cg.whereTheyAgree && cg.whereTheyAgree.length > 0) {
+      y = checkPageBreak(pdf, y, 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(200, 200, 220);
+      pdf.text('2. WHERE THEY AGREE', MARGIN, y);
+      y += 6;
+
+      for (const item of cg.whereTheyAgree) {
+        y = checkPageBreak(pdf, y, 22);
+        if (typeof item === 'string') {
+          y = drawSimpleCard(pdf, y, 'ALIGNMENT POINT', item);
+        } else {
+          const itemObj = item as Record<string, any>;
+          const impl = itemObj.businessProductImplication || itemObj.whatThisTellsUs || itemObj.businessImplication || '';
+          const claim = itemObj.explicitClaim || '';
+          const ev = itemObj.architecturalEvidence || '';
+          const text = `Explicit Claim: ${claim}\nArchitectural Evidence: ${ev}${impl ? `\nBusiness Implication: ${impl}` : ''}`;
+          y = drawSimpleCard(pdf, y, 'ALIGNMENT POINT', text);
+        }
+        y += 2;
+      }
+    }
+
+    // 3. Where They Differ
+    if (cg.whereTheyDiffer && cg.whereTheyDiffer.length > 0) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(200, 200, 220);
+      pdf.text('3. WHERE THEY DIFFER', MARGIN, y);
+      y += 6;
+
+      for (const item of cg.whereTheyDiffer) {
+        y = checkPageBreak(pdf, y, 22);
+        if (typeof item === 'string') {
+          y = drawSimpleCard(pdf, y, 'DISCREPANCY POINT', item);
+        } else {
+          const itemObj = item as Record<string, any>;
+          const discType = itemObj.discrepancyType || 'Tension';
+          const desc = itemObj.description || itemObj.tension || '';
+          const ev = itemObj.evidence || '';
+          const text = `Type: ${discType}\nDescription: ${desc}\nEvidence: ${ev}`;
+          y = drawSimpleCard(pdf, y, 'DISCREPANCY POINT', text);
+        }
+        y += 2;
+      }
+    }
+
+    // 4. What The System Reveals
+    if (cg.whatSystemReveals && cg.whatSystemReveals.length > 0) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(200, 200, 220);
+      pdf.text('4. WHAT THE SYSTEM REVEALS (UNSTATED IN COPY)', MARGIN, y);
+      y += 6;
+
+      for (const item of cg.whatSystemReveals) {
+        y = checkPageBreak(pdf, y, 22);
+        if (typeof item === 'string') {
+          y = drawSimpleCard(pdf, y, 'SYSTEM REVELATION', item);
+        } else {
+          const itemObj = item as Record<string, any>;
+          const ins = itemObj.insight || '';
+          const ev = itemObj.evidence || '';
+          const text = `Insight: ${ins}\nEvidence: ${ev}`;
+          y = drawSimpleCard(pdf, y, 'SYSTEM REVELATION', text);
+        }
+        y += 2;
+      }
+    }
+
+    // 5. The Business As A System
+    if (cg.businessAsSystem) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(200, 200, 220);
+      pdf.text('5. THE BUSINESS / PRODUCT AS A SYSTEM (OBSERVED VS INFERRED)', MARGIN, y);
+      y += 6;
+
+      const biz = cg.businessAsSystem as Record<string, any>;
+      const dims = [
+        { label: 'Core Product / Service Mechanism', item: biz?.coreMechanism || biz?.coreBusinessMechanism },
+        { label: 'Primary User / Customer', item: biz?.primaryUser || biz?.commercialFocusAudience },
+        { label: 'Value Creation Mechanism', item: biz?.valueCreation || biz?.capabilityToValueModel },
+        { label: 'Commercial Model', item: biz?.commercialModel },
+        { label: 'Acquisition Mechanism', item: biz?.acquisitionMechanism },
+        { label: 'Conversion Mechanism', item: biz?.conversionMechanism || biz?.primaryIntendedAction },
+        { label: 'Retention / Expansion Mechanism', item: biz?.retentionOrExpansion },
+        { label: 'Product & System Relationships', item: biz?.productSystemRelationships || biz?.leveragePoints },
+      ];
+
+      for (const dim of dims) {
+        if (dim.item) {
+          y = checkPageBreak(pdf, y, 22);
+          const text = `OBSERVED: ${dim.item.observed}\nINFERRED: ${dim.item.inference}`;
+          y = drawSimpleCard(pdf, y, dim.label.toUpperCase(), text);
+          y += 2;
+        }
+      }
+    }
+
+    // 6. Leverage Points
+    if (cg.leveragePoints && cg.leveragePoints.length > 0) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(200, 200, 220);
+      pdf.text('6. SYSTEM LEVERAGE POINTS', MARGIN, y);
+      y += 6;
+
+      for (const item of cg.leveragePoints) {
+        y = checkPageBreak(pdf, y, 25);
+        const oppTitle = item.problem || (item as any).opportunity || 'Leverage Point';
+        const text = `Problem / Opportunity: ${oppTitle}\nIntervention: ${item.potentialIntervention}\nEvidence: ${item.evidence}\nWhy It Matters: ${item.whyItMatters}\nConfidence: ${item.confidence}`;
+        y = drawSimpleCard(pdf, y, 'LEVERAGE POINT', text);
+        y += 2;
+      }
+    }
+
+    // 7. Where I Could Help
+    if (cg.whereICouldHelp && cg.whereICouldHelp.length > 0) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(200, 200, 220);
+      pdf.text('7. WHERE I COULD HELP (PROJECT OPPORTUNITIES)', MARGIN, y);
+      y += 6;
+
+      for (const item of cg.whereICouldHelp) {
+        y = checkPageBreak(pdf, y, 25);
+        const itemObj = item as Record<string, any>;
+        const title = itemObj.projectTitle || itemObj.opportunity || 'Project Opportunity';
+        const scope = itemObj.proposedScope || itemObj.howICouldHelp || '';
+        const impact = itemObj.expectedImpact || itemObj.whyItMatters || '';
+        const text = `Title: ${title}\nProposed Scope: ${scope}\nExpected Impact: ${impact}`;
+        y = drawSimpleCard(pdf, y, 'CLIENT PROJECT OPPORTUNITY', text);
+        y += 2;
+      }
+    }
+
+    // 8. Client Opportunity Bridge / Outbound Angle
+    if (cg.outboundAngle) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(200, 200, 220);
+      pdf.text('8. CLIENT OPPORTUNITY BRIDGE & FOUNDER OBSERVATION', MARGIN, y);
+      y += 6;
+
+      const oa = cg.outboundAngle;
+      const whyInt = oa.whyInteresting || oa.whyItMatters || '';
+      const conv = oa.potentialConversation || oa.potentialIntervention || '';
+      const text = `What I Noticed: ${oa.whatINoticed}\nWhy It Is Interesting: ${whyInt}\nPotential Conversation: ${conv}`;
+      y = drawSimpleCard(pdf, y, 'CLIENT OPPORTUNITY BRIDGE', text);
+      y += 2;
+    }
+
+    // 9. Common Ground Signal
+    if (cg.commonGroundSignal) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 16);
+      y = drawSimpleCard(pdf, y, '9. DISTINCTIVE SYSTEM-LEVEL SIGNAL', cg.commonGroundSignal);
+      y += 2;
+    }
+
+    // 11. Evidence Boundary
+    if (cg.evidenceBoundary) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 25);
+      const eb = cg.evidenceBoundary;
+      const scopeNote = eb.scopeNote || (eb as any).analyzedScopeNote || '';
+      const facts = eb.observedFacts || (eb as any).whatWeKnow || [];
+      const infs = eb.inferences || (eb as any).whatWeInfer || [];
+      const unks = eb.unknowns || (eb as any).whatRemainsUnknown || [];
+      const text = `Scope Note: ${scopeNote}\n\nWHAT WE KNOW (Observed Facts):\n- ${facts.join('\n- ')}\n\nWHAT WE INFER (Inferences):\n- ${infs.join('\n- ')}\n\nWHAT REMAINS UNKNOWN (Gaps):\n- ${unks.join('\n- ')}`;
+      y = drawSimpleCard(pdf, y, '11. EVIDENCE BOUNDARY & SCOPE DISCIPLINE', text);
+    }
+
+    // 12. Provider Matching & Prospect Qualification (Side B)
+    if (cg.providerMatch) {
+      y += 4;
+      y = checkPageBreak(pdf, y, 25);
+      const pm = cg.providerMatch;
+      const dims = pm.sevenDimensionFit;
+      let dimText = '';
+      if (dims) {
+        dimText = `\n\n7-DIMENSION EVALUATION:\n` +
+          `- Problem Fit: ${dims.problemFit?.score || 'N/A'} — ${dims.problemFit?.note || ''}\n` +
+          `- Capability Fit: ${dims.capabilityFit?.score || 'N/A'} — ${dims.capabilityFit?.note || ''}\n` +
+          `- Delivery Fit: ${dims.deliveryFit?.score || 'N/A'} — ${dims.deliveryFit?.note || ''}\n` +
+          `- Timing Fit: ${dims.timingFit?.score || 'N/A'} — ${dims.timingFit?.note || ''}\n` +
+          `- Proof Fit: ${dims.proofFit?.score || 'N/A'} — ${dims.proofFit?.note || ''}\n` +
+          `- Commercial Fit: ${dims.commercialFit?.score || 'N/A'} — ${dims.commercialFit?.note || ''}\n` +
+          `- Evidence Strength: ${dims.evidenceStrength?.score || 'N/A'} — ${dims.evidenceStrength?.note || ''}`;
+      }
+
+      const matchText = `Fit Classification: ${pm.fit} FIT\nQualification Decision: ${pm.decision}\nProblem Category: ${pm.problemCategoryLabel || pm.problemCategory}\nConfidence: ${pm.confidence}%\n\nOPPORTUNITY FORMULA:\n"${pm.opportunity || 'N/A'}"\n\nCompany Need: ${pm.companyNeed}\nEvidence: ${pm.evidence}\nProvider Fit: ${pm.providerFit}\nDelivery Fit: ${pm.deliveryFit}\nTiming Signal: ${pm.timingOrTrigger}\nStudio Proof: ${pm.relevantProof}${dimText}${pm.outreachAngle ? `\n\nFounder Conversation Starter:\n"${pm.outreachAngle}"` : ''}${pm.upgradeRequirements ? `\n\nUpgrade Requirements:\n${pm.upgradeRequirements}` : ''}${pm.disqualificationReason ? `\n\nDisqualification Reason:\n${pm.disqualificationReason}` : ''}`;
+      
+      y = drawSimpleCard(pdf, y, '12. PROVIDER MATCHING & PROSPECT QUALIFICATION', matchText);
+    }
   }
 
   // ── Sources ─────────────────────────────────────────
   const sources = report.sourceCitations || [];
   if (sources.length > 0) {
-    y += 6;
-    y = checkPageBreak(pdf, y, 8);
+    y += 8;
+    y = checkPageBreak(pdf, y, 16);
     addSectionHeader(pdf, y, '', 'Sources');
     y += 14;
+
     for (const src of sources) {
-      y = checkPageBreak(pdf, y, 15);
+      y = checkPageBreak(pdf, y, 18);
       y = drawSourceEntry(pdf, y, src.title || src.url, src.url, src.snippet || '');
+      y += 3;
     }
   }
 
@@ -274,108 +493,6 @@ function drawWrappedText(
 
 /* ── Card renderers ──────────────────────────────────── */
 
-function drawEvidenceCard(pdf: jsPDF, y: number, signal: PositioningSignal, firstEv: any): number {
-  const source = firstEv?.source || 'Unknown source';
-  const excerpt = firstEv?.excerpt || signal.signal;
-  const reasoning = signal.contributesToPosition || signal.reasoningNote || '';
-
-  // Draw card background
-  const labelY = y + 4;
-  pdf.setFillColor(16, 16, 20);
-  pdf.rect(MARGIN, y, CONTENT_W, 0, 'F'); // placeholder
-
-  // Source & type
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text(`${source}  ·  ${signal.signalType}`, MARGIN + 4, labelY);
-
-  // Excerpt
-  pdf.setFont('helvetica', 'italic');
-  pdf.setFontSize(8);
-  pdf.setTextColor(180, 180, 190);
-  const excerptLines = pdf.splitTextToSize(`"${excerpt}"`, CONTENT_W - 16);
-  const excerptY = labelY + 4;
-  pdf.text(excerptLines, MARGIN + 4, excerptY);
-
-  let cardH: number;
-  if (reasoning) {
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(120, 120, 130);
-    const reasonLines = pdf.splitTextToSize(`→ ${reasoning}`, CONTENT_W - 16);
-    const reasonY = excerptY + excerptLines.length * 3.5 + 2;
-    pdf.text(reasonLines, MARGIN + 4, reasonY);
-    cardH = reasonY + reasonLines.length * 3 + 4 - y;
-  } else {
-    cardH = excerptY + excerptLines.length * 3.5 + 4 - y;
-  }
-
-  // Redraw background with correct height
-  pdf.setFillColor(16, 16, 20);
-  pdf.rect(MARGIN, y, CONTENT_W, cardH, 'F');
-  // Re-render content
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text(`${source}  ·  ${signal.signalType}`, MARGIN + 4, labelY);
-  pdf.setFont('helvetica', 'italic');
-  pdf.setFontSize(8);
-  pdf.setTextColor(180, 180, 190);
-  pdf.text(excerptLines, MARGIN + 4, excerptY);
-  if (reasoning) {
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(120, 120, 130);
-    const reasonLines = pdf.splitTextToSize(`→ ${reasoning}`, CONTENT_W - 16);
-    const reasonY = excerptY + excerptLines.length * 3.5 + 2;
-    pdf.text(reasonLines, MARGIN + 4, reasonY);
-  }
-
-  return y + cardH + 3;
-}
-
-function drawVersionCard(pdf: jsPDF, y: number, label: string, note: string, description: string): number {
-  pdf.setFillColor(16, 16, 20);
-  pdf.rect(MARGIN, y, CONTENT_W, 0, 'F');
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.setTextColor(100, 140, 255);
-  pdf.text(label, MARGIN + 4, y + 4);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text(note, MARGIN + 4, y + 10);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8.5);
-  pdf.setTextColor(180, 180, 190);
-  const descLines = pdf.splitTextToSize(description, CONTENT_W - 16);
-  const descY = y + 14;
-  pdf.text(descLines, MARGIN + 4, descY);
-
-  const cardH = descY + descLines.length * 3.5 + 4 - y;
-  pdf.setFillColor(16, 16, 20);
-  pdf.rect(MARGIN, y, CONTENT_W, cardH, 'F');
-  // Re-render
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.setTextColor(100, 140, 255);
-  pdf.text(label, MARGIN + 4, y + 4);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text(note, MARGIN + 4, y + 10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8.5);
-  pdf.setTextColor(180, 180, 190);
-  pdf.text(descLines, MARGIN + 4, descY);
-
-  return y + cardH + 3;
-}
-
 function drawSimpleCard(pdf: jsPDF, y: number, label: string, content: string): number {
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(8);
@@ -405,307 +522,6 @@ function drawSimpleCard(pdf: jsPDF, y: number, label: string, content: string): 
   return y + cardH + 3;
 }
 
-function drawContradictionCard(pdf: jsPDF, y: number, area: string, description: string, impact: string): number {
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.setTextColor(220, 220, 230);
-  pdf.text(area, MARGIN + 4, y + 4);
-
-  // Impact badge
-  let impactR = 120, impactG = 120, impactB = 130;
-  if (impact === 'significant') { impactR = 200; impactG = 80; impactB = 60; }
-  else if (impact === 'moderate') { impactR = 200; impactG = 180; impactB = 60; }
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(6.5);
-  pdf.setTextColor(impactR, impactG, impactB);
-  const impactW = pdf.getTextWidth(impact);
-  pdf.text(impact, MARGIN + CONTENT_W - impactW - 4, y + 4);
-
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8);
-  pdf.setTextColor(180, 180, 190);
-  const descLines = pdf.splitTextToSize(description, CONTENT_W - 16);
-  const descY = y + 10;
-  pdf.text(descLines, MARGIN + 4, descY);
-
-  const cardH = descY + descLines.length * 3.5 + 4 - y;
-  pdf.setFillColor(16, 16, 20);
-  pdf.rect(MARGIN, y, CONTENT_W, cardH, 'F');
-  // Re-render
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.setTextColor(220, 220, 230);
-  pdf.text(area, MARGIN + 4, y + 4);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(6.5);
-  pdf.setTextColor(impactR, impactG, impactB);
-  pdf.text(impact, MARGIN + CONTENT_W - impactW - 4, y + 4);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8);
-  pdf.setTextColor(180, 180, 190);
-  pdf.text(descLines, MARGIN + 4, descY);
-
-  return y + cardH + 3;
-}
-
-function drawStabilitySection(
-  pdf: jsPDF,
-  y: number,
-  pct: number,
-  discovered: number,
-  analyzed: number,
-  stopReason: string,
-  progression: { pageType: string; confidence: number }[],
-): number {
-  let currentY = y;
-
-  // Stability card
-  pdf.setFillColor(16, 16, 20);
-  pdf.rect(MARGIN, currentY, CONTENT_W, 28, 'F');
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.setTextColor(120, 120, 130);
-  pdf.text('Position stability', MARGIN + 4, currentY + 4);
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(14);
-  pdf.setTextColor(220, 220, 230);
-  pdf.text(`${pct}%`, MARGIN + CONTENT_W - 10, currentY + 10, { align: 'right' });
-
-  // Stability bar bg
-  pdf.setFillColor(30, 30, 40);
-  pdf.rect(MARGIN + 4, currentY + 12, CONTENT_W - 8, 3, 'F');
-  // Fill
-  let fillR = 100, fillG = 140, fillB = 255;
-  if (pct >= 80) { fillR = 60; fillG = 200; fillB = 100; }
-  else if (pct >= 50) { fillR = 200; fillG = 180; fillB = 60; }
-  pdf.setFillColor(fillR, fillG, fillB);
-  if (pct > 0) {
-    pdf.rect(MARGIN + 4, currentY + 12, ((CONTENT_W - 8) * pct) / 100, 3, 'F');
-  }
-
-  const stabilityLabel = pct >= 90 ? 'Stable' : pct >= 75 ? 'Converging' : pct >= 50 ? 'Developing' : 'Emerging';
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text(stabilityLabel, MARGIN + 4, currentY + 20);
-
-  currentY += 32;
-
-  // Stats grid
-  const cellW = (CONTENT_W - 8) / 3;
-  const stats = [
-    { label: 'Discovered', value: discovered },
-    { label: 'Analyzed', value: analyzed },
-    { label: 'Skipped', value: discovered - analyzed },
-  ];
-  for (let i = 0; i < 3; i++) {
-    const cx = MARGIN + i * (cellW + 4);
-    pdf.setFillColor(16, 16, 20);
-    pdf.rect(cx, currentY, cellW, 16, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(12);
-    pdf.setTextColor(220, 220, 230);
-    pdf.text(String(stats[i].value), cx + cellW / 2, currentY + 7, { align: 'center' });
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(6.5);
-    pdf.setTextColor(80, 80, 90);
-    pdf.text(stats[i].label, cx + cellW / 2, currentY + 13, { align: 'center' });
-  }
-  currentY += 20;
-
-  // Stop reason card
-  pdf.setFillColor(16, 16, 20);
-  pdf.rect(MARGIN, currentY, CONTENT_W, 14, 'F');
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text('Why investigation stopped', MARGIN + 4, currentY + 4);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(180, 180, 190);
-  pdf.text(stopReason, MARGIN + 4, currentY + 10);
-  currentY += 18;
-
-  // Confidence progression
-  if (progression.length > 1) {
-    currentY += 4;
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7);
-    pdf.setTextColor(80, 80, 90);
-    pdf.text('Confidence progression', MARGIN, currentY);
-    currentY += 6;
-
-    for (const p of progression) {
-      currentY = checkPageBreak(pdf, currentY, 8);
-      const rowY = currentY;
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7);
-      pdf.setTextColor(120, 120, 130);
-      pdf.text(p.pageType.replace(/_/g, ' '), MARGIN, rowY + 3);
-
-      // Bar bg
-      pdf.setFillColor(30, 30, 40);
-      pdf.rect(MARGIN + 40, rowY, CONTENT_W - 70, 3, 'F');
-      // Bar fill
-      let barR = 100, barG = 140, barB = 255;
-      if (p.confidence >= 80) { barR = 60; barG = 200; barB = 100; }
-      else if (p.confidence >= 50) { barR = 200; barG = 180; barB = 60; }
-      pdf.setFillColor(barR, barG, barB);
-      if (p.confidence > 0) {
-        pdf.rect(MARGIN + 40, rowY, ((CONTENT_W - 70) * p.confidence) / 100, 3, 'F');
-      }
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7);
-      pdf.setTextColor(160, 160, 170);
-      pdf.text(`${p.confidence}%`, MARGIN + CONTENT_W - 20, rowY + 3);
-      currentY += 5;
-    }
-  }
-
-  return currentY;
-}
-
-function drawMarketSpace(pdf: jsPDF, y: number, ms: MarketSpace): number {
-  let currentY = y;
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text('Market Space', MARGIN, currentY);
-  currentY += 6;
-
-  const spaces: { label: string; space: string; rationale: string; r: number; g: number; b: number }[] = [
-    { label: 'Primary', space: ms.primary?.space || 'Unknown', rationale: ms.primary?.rationale || '', r: 60, g: 200, b: 100 },
-    ...(ms.secondary ? [{ label: 'Secondary', space: ms.secondary.space, rationale: ms.secondary.rationale, r: 200, g: 180, b: 60 }] : []),
-    ...(ms.emerging ? [{ label: 'Emerging', space: ms.emerging.space, rationale: ms.emerging.rationale, r: 200, g: 160, b: 60 }] : []),
-  ];
-
-  for (const s of spaces) {
-    currentY = checkPageBreak(pdf, currentY, 16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7);
-    pdf.setTextColor(s.r, s.g, s.b);
-    pdf.text(s.label, MARGIN, currentY + 3);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(180, 180, 190);
-    pdf.text(s.space, MARGIN + 22, currentY + 3);
-    pdf.setFont('helvetica', 'italic');
-    pdf.setFontSize(7);
-    pdf.setTextColor(120, 120, 130);
-    currentY = drawWrappedText(pdf, s.rationale, currentY + 8, 7, 'italic', 120, 120, 130);
-  }
-
-  return currentY;
-}
-
-function drawClaritySection(pdf: jsPDF, y: number, items: PositioningClarityItem[]): number {
-  let currentY = y;
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text('Positioning Clarity', MARGIN, currentY);
-  currentY += 6;
-
-  for (const item of items.slice(0, 5)) {
-    currentY = checkPageBreak(pdf, currentY, 14);
-    const symbol = item.clarity === 'explicit' ? '✓' : item.clarity === 'implicit' ? '→' : item.clarity === 'ambiguous' ? '?' : '×';
-    let symR = 200, symG = 80, symB = 60;
-    if (item.clarity === 'explicit') { symR = 60; symG = 200; symB = 100; }
-    else if (item.clarity === 'implicit') { symR = 200; symG = 180; symB = 60; }
-    else if (item.clarity === 'ambiguous') { symR = 200; symG = 160; symB = 60; }
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7);
-    pdf.setTextColor(symR, symG, symB);
-    pdf.text(symbol, MARGIN, currentY + 3);
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(180, 180, 190);
-    pdf.text(item.question, MARGIN + 8, currentY + 3);
-
-    pdf.setFont('helvetica', 'italic');
-    pdf.setFontSize(7);
-    pdf.setTextColor(120, 120, 130);
-    currentY = drawWrappedText(pdf, item.explanation, currentY + 8, 7, 'italic', 120, 120, 130);
-  }
-
-  return currentY;
-}
-
-function drawRecommendations(pdf: jsPDF, y: number, recs: PositioningRecommendation[]): number {
-  let currentY = y;
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(8);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text('Recommendations', MARGIN, currentY);
-  currentY += 6;
-
-  for (const rec of recs) {
-    currentY = checkPageBreak(pdf, currentY, 16);
-    const prioLabel = rec.priority === 'high' ? 'H' : rec.priority === 'medium' ? 'M' : 'L';
-    let prioR = 200, prioG = 80, prioB = 60;
-    if (rec.priority === 'medium') { prioR = 200; prioG = 180; prioB = 60; }
-    else if (rec.priority === 'low') { prioR = 120; prioG = 120; prioB = 130; }
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7);
-    pdf.setTextColor(prioR, prioG, prioB);
-    pdf.text(prioLabel, MARGIN, currentY + 3);
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(180, 180, 190);
-    pdf.text(rec.action, MARGIN + 8, currentY + 3);
-
-    if (rec.observationChain) {
-      currentY = drawWrappedText(pdf, `${rec.observationChain.observation} → ${rec.observationChain.inference}`, currentY + 8, 7, 'italic', 120, 120, 130);
-    }
-
-    pdf.setFont('helvetica', 'italic');
-    pdf.setFontSize(7);
-    pdf.setTextColor(100, 100, 110);
-    currentY = drawWrappedText(pdf, rec.rationale, currentY + 1, 7, 'italic', 100, 100, 110);
-  }
-
-  return currentY;
-}
-
-function drawReflectionCard(pdf: jsPDF, y: number, question: string): number {
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text('Final question', MARGIN + 4, y + 4);
-
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(11);
-  pdf.setTextColor(220, 220, 230);
-  const lines = pdf.splitTextToSize(`"${question}"`, CONTENT_W - 16);
-  pdf.text(lines, MARGIN + 4, y + 10);
-
-  const cardH = 10 + lines.length * 4 + 4;
-  pdf.setFillColor(16, 16, 20);
-  pdf.rect(MARGIN, y, CONTENT_W, cardH, 'F');
-  // Re-render
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(7);
-  pdf.setTextColor(80, 80, 90);
-  pdf.text('Final question', MARGIN + 4, y + 4);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(11);
-  pdf.setTextColor(220, 220, 230);
-  pdf.text(lines, MARGIN + 4, y + 10);
-
-  const nextY = y + cardH + 4;
-  pdf.setFont('helvetica', 'italic');
-  pdf.setFontSize(7.5);
-  pdf.setTextColor(100, 100, 110);
-  return drawWrappedText(pdf, 'That is the unique position this company occupies — the space that would be empty without them.', nextY, 7.5, 'italic', 100, 100, 110);
-}
-
 function drawSourceEntry(pdf: jsPDF, y: number, title: string, url: string, snippet: string): number {
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(7.5);
@@ -721,8 +537,6 @@ function drawSourceEntry(pdf: jsPDF, y: number, title: string, url: string, snip
   }
   return y + 12;
 }
-
-/* ── Utilities ────────────────────────────────────────── */
 
 function checkPageBreak(pdf: jsPDF, y: number, neededMM: number): number {
   if (y + neededMM > PAGE_H - MARGIN) {

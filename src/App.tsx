@@ -17,31 +17,35 @@ export default function App() {
 
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ||
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2ZGxvbHJrbHpsZHFreWlqbnR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNTYyMjksImV4cCI6MjA5ODYzMjIyOX0.3ychI7oiC9zdatwy6QP8SQTfVI-x6vl4x3NpN53TvBI';
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (anonKey) {
-        headers['Authorization'] = `Bearer ${anonKey}`;
+      let response: Response | null = null;
+
+      // If an external Supabase function URL is explicitly configured, try it with fallback
+      if (supabaseUrl) {
+        try {
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          if (anonKey) {
+            headers['Authorization'] = `Bearer ${anonKey}`;
+          }
+          const externalRes = await fetch(`${supabaseUrl}/functions/v1/analyze`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(input),
+          });
+          if (externalRes.ok) {
+            response = externalRes;
+          }
+        } catch (fetchErr) {
+          console.warn('External analyze endpoint unreachable, falling back to /api/analyze:', fetchErr);
+        }
       }
 
-      let analyzeEndpoint = supabaseUrl
-        ? `${supabaseUrl}/functions/v1/analyze`
-        : '/api/analyze';
-
-      let response = await fetch(analyzeEndpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(input),
-      });
-
-      // If external Supabase endpoint fails (e.g. 401), fallback to local Express endpoint
-      if (!response.ok && supabaseUrl) {
-        console.warn(`External endpoint returned ${response.status}, falling back to local /api/analyze`);
-        analyzeEndpoint = '/api/analyze';
-        response = await fetch(analyzeEndpoint, {
+      // If no external response or external failed, call the container's built-in /api/analyze
+      if (!response) {
+        response = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(input),
@@ -50,7 +54,7 @@ export default function App() {
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => null);
-        throw new Error(errBody?.error || `Server error: ${response.status}`);
+        throw new Error(errBody?.message || errBody?.error || `Server returned error (${response.status})`);
       }
 
       const reader = response.body?.getReader();

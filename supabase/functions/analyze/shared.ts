@@ -5,9 +5,15 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 export const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const GROQ_MODEL = "llama-3.3-70b-versatile";
 export const STABILIZATION_THRESHOLD = 0.90;
-export const MAX_EXTRACT_TOKENS = 1200;
-export const MAX_HYPOTHESIS_TOKENS = 1000;
-export const MAX_INFERENCE_TOKENS = 6000;
+
+// Hard Investigation Budgets
+export const MAX_ANALYZED_PAGES = 5;
+export const MAX_EXTRACTION_INPUT_TOKENS = 1200;
+export const MAX_HYPOTHESIS_INPUT_TOKENS = 2500;
+export const MAX_FINAL_INPUT_TOKENS = 6000;
+export const MAX_EXTRACT_TOKENS = 800;
+export const MAX_HYPOTHESIS_TOKENS = 600;
+export const MAX_INFERENCE_TOKENS = 3500;
 
 // ── Rate limit / retry configuration ────────────────────────
 
@@ -135,7 +141,44 @@ export interface HypothesisState {
   positionStatement: string;
   known: KnownFact[];
   unknown: UnknownArea[];
-  confidence: number; // 0-100
+  confidence: number; // 0-100 or 0-1
+  positionStability?: number; // 0-1 or 0-100
+}
+
+/** Calculate hypothesis stability (0.0 to 1.0) separately from confidence & coverage */
+export function calculateStability(
+  hypothesis: HypothesisState,
+  coverage: CategoryCoverage,
+  unexaminedSourcesCount: number,
+): number {
+  const normConf = hypothesis.confidence > 1 ? hypothesis.confidence / 100 : hypothesis.confidence;
+  const highPriUnknowns = hypothesis.unknown.filter((u) => u.importance === "high").length;
+  const medPriUnknowns = hypothesis.unknown.filter((u) => u.importance === "medium").length;
+  const unresolvedCats = coverage.resolutions.filter((r) => r.status === "unresolved").length;
+
+  const totalDiscovered = coverage.sampled + unexaminedSourcesCount;
+  const unexaminedRatio = totalDiscovered > 0 ? unexaminedSourcesCount / totalDiscovered : 0;
+
+  // Base stability starts from hypothesis confidence
+  let stab = normConf * 0.60;
+
+  // Penalize for high & medium priority unresolved questions
+  stab -= highPriUnknowns * 0.12;
+  stab -= medPriUnknowns * 0.04;
+
+  // Penalize for unresolved target categories
+  stab -= unresolvedCats * 0.08;
+
+  // Penalize proportionally to the fraction of unexamined discovered sources
+  // A large unexamined surface area (e.g. 106 unexamined / 111 discovered) reduces stability across the site
+  stab -= unexaminedRatio * 0.30;
+
+  // Corroboration bonus if evidence spans 3+ distinct sampled categories
+  if (coverage.sampled >= 3) {
+    stab += 0.15;
+  }
+
+  return Math.min(0.95, Math.max(0.10, Math.round(stab * 100) / 100));
 }
 
 // ── Category Resolution & Coverage Types ──────────────────────
@@ -199,6 +242,7 @@ export interface AnalysisMetadata {
   evidenceEfficiency: number;
   stopReason: string;
   finalConfidence: number;
+  positionStability?: number;
   evidenceObjectsCount: number;
   confidenceProgression: { step: number; pageType: string; confidence: number }[];
   coverage: CategoryCoverage;
