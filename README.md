@@ -67,6 +67,15 @@ npm run build
 npm start
 ```
 
+### 4. Deploying to Vercel
+
+The repository is pre-configured with native Vercel Serverless Functions in the `/api` directory:
+- `/api/analyze`: Server-Sent Events (SSE) streaming investigation pipeline.
+- `/api/auth/quota`: Real-time tier-based rate limit checking and quota management.
+- `/api/health`: Health status endpoint.
+
+Simply import the repository into Vercel and configure your environment variables (`GEMINI_API_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `ADMIN_EMAILS`).
+
 ---
 
 ## Tech Stack

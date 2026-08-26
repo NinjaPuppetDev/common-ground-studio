@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/analyze.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/auth/quota.ts": {
+      "maxDuration": 15
+    }
+  }
+}
